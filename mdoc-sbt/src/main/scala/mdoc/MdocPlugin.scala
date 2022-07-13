@@ -1,268 +1,121 @@
 package mdoc
 
+import bleep._
+import bleep.internal.{ScalaVersions, dependencyOrdering}
+import bloop.config.Config.Platform
+import coursier.core.{ModuleName, Organization}
+
 import java.io.File
-import sbt.Keys._
-import sbt._
-import scala.collection.mutable.ListBuffer
+import java.nio.file.{Files, Path}
 
-object MdocPlugin extends AutoPlugin {
-  object autoImport {
-    val mdoc =
-      inputKey[Unit](
-        "Run mdoc to generate markdown sources. " +
-          "Supports arguments like --watch to start the file watcher with livereload."
-      )
-    val mdocVariables =
-      settingKey[Map[String, String]](
-        "Site variables that can be referenced from markdown with @VERSION@."
-      )
-    val mdocIn =
-      settingKey[File](
-        "Input directory or source file containing markdown to be processed by mdoc. " +
-          "Defaults to the toplevel docs/ directory."
-      )
-    val mdocOut =
-      settingKey[File](
-        "Output directory or output file name for mdoc generated markdown. " +
-          "Defaults to the target/mdoc directory of this project. " +
-          "If this is a file name, it assumes your `in` was also an individual file"
-      )
-    val mdocExtraArguments =
-      settingKey[Seq[String]](
-        "Additional command-line arguments to pass on every mdoc invocation. " +
-          "For example, add '--no-link-hygiene' to disable link hygiene."
-      )
-    val mdocJS =
-      settingKey[Option[Project]](
-        "Optional Scala.js classpath and compiler options to use for the mdoc:js modifier. " +
-          "To use this setting, set the value to `mdocJS := Some(jsproject)` where `jsproject` must be a Scala.js project."
-      )
-    val mdocJSLibraries =
-      taskKey[Seq[Attributed[File]]](
-        "Additional local JavaScript files to load before loading the mdoc compiled Scala.js bundle. " +
-          "If using scalajs-bundler, set this key to `webpack.in(<mdocJS project>, Compile, fullOptJS).value`."
-      )
-    val mdocAutoDependency =
-      settingKey[Boolean](
-        "If false, do not add mdoc as a library dependency this project. " +
-          "Default value is true."
-      )
-  }
-  val mdocInternalVariables =
-    settingKey[List[(String, String)]](
-      "Additional site variables that are added by mdoc plugins. Not intended for public use."
+class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdocVersion: String = "2.3.2") {
+  // Site variables that can be referenced from markdown with @VERSION@.
+  def mdocVariables: Map[String, String] = Map.empty
+  // Input directory or source file containing markdown to be processed by mdoc.
+  // Defaults to the toplevel docs/ directory.
+  def mdocIn: Path = started.buildPaths.buildDir / "docs"
+  // Output directory or output file name for mdoc generated markdown. Defaults to the target/mdoc directory of this project. If this is a file name, it assumes your `in` was also an individual file
+  def mdocOut: Path = started.projectPaths(crossProjectName).targetDir / "mdoc"
+  // Additional command-line arguments to pass on every mdoc invocation. For example, add '--no-link-hygiene' to disable link hygiene.
+  def mdocExtraArguments: Seq[String] = Nil
+  // Optional Scala.js classpath and compiler options to use for the mdoc:js modifier. To use this setting, set the value to `mdocJS := Some(jsproject)` where `jsproject` must be a Scala.js project.
+  def mdocJS: Option[model.CrossId] = None
+  // Additional local JavaScript files to load before loading the mdoc compiled Scala.js bundle. If using scalajs-bundler, set this key to `webpack.in(<mdocJS project>, Compile, fullOptJS).value`.
+  def mdocJSLibraries: Seq[Path] = Nil
+
+  if (mdocIn == started.buildPaths.buildDir) {
+    throw new MdocException(
+      s"mdocIn and baseDirectory cannot have the same value '$mdocIn'. To fix this problem, either customize the project baseDirectory with `in(file('myproject-docs'))` or move `mdocIn` somewhere else."
     )
-  import autoImport._
-
-  lazy val validateSettings = Def.task[Unit] {
-    val in = mdocIn.value.toPath
-    val base = baseDirectory.value.toPath
-    if (in == base) {
-      throw MdocException(
-        s"mdocIn and baseDirectory cannot have the same value '$in'. " +
-          s"To fix this problem, either customize the project baseDirectory with `in(file('myproject-docs'))` or " +
-          s"move `mdocIn` somewhere else."
-      )
-    }
   }
 
-  lazy val mdocJSWorkerClasspath = taskKey[Option[Seq[File]]](
-    "Optional classpath to use for Mdoc.js worker - " +
-      "if not provided, the classpath will be formed by resolving the worker dependency"
+  def mdocDependency: Dep.ScalaDependency = {
+    val suffix = if (mdocJS.isDefined) "-js" else ""
+    Dep.Scala("org.scalameta", s"mdoc$suffix", mdocVersion)
+  }
+
+  // Run mdoc to generate markdown sources. Supports arguments like --watch to start the file watcher with livereload.
+  def mdoc(
+      // Additional site variables that are added by mdoc plugins. Not intended for public use.
+      mdocInternalVariables: List[(String, String)] = Nil,
+      args: List[String]
+  ): Unit = {
+    val outDir = Files.createTempDirectory("bleep-mdoc")
+    val bloopProject = started.bloopProjects(crossProjectName)
+    val explodedProject = started.build.projects(crossProjectName)
+
+    val scalaVersions = getScalaVersions(explodedProject)
+
+    val out = outDir / "mdoc.properties"
+    val props = new java.util.Properties()
+    mdocVariables.foreach { case (key, value) => props.put(key, value) }
+    mdocInternalVariables.foreach { case (key, value) => props.put(key, value) }
+
+    mdocJS.foreach { jsCrossId =>
+      val jsCrossProjectName = crossProjectName.copy(crossId = Some(jsCrossId))
+      val jsBloopProject = started.bloopProjects(jsCrossProjectName)
+      val jsPlatform: Platform.Js = jsBloopProject.platform match {
+        case Some(js: Platform.Js) => js
+        case other                 => throw new BuildException.Text(s"Expected Scala.js project, got $other")
+      }
+      val jsExplodedProject = started.build.projects(jsCrossProjectName)
+
+      val jsScalaVersions = getScalaVersions(jsExplodedProject)
+
+      props.put(s"js-scalac-options", jsBloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
+      props.put(s"js-classpath", jsBloopProject.classpath.mkString(File.pathSeparator))
+      props.put(
+        s"js-linker-classpath", {
+          val linkerJars = getJars(jsScalaVersions, linkerDependency(jsPlatform.config.version))
+          val workerClasspath = mdocJSWorkerClasspath.getOrElse(getJars(jsScalaVersions, mdocJSDependency))
+          (linkerJars ++ workerClasspath).mkString(File.pathSeparator)
+        }
+      )
+      props.put(s"js-libraries", mdocJSLibraries.mkString(File.pathSeparator))
+      props.put(s"js-module-kind", jsPlatform.config.kind.id)
+    }
+
+    props.put("in", mdocIn.toString)
+    props.put("out", mdocOut.toString)
+    props.put("scalacOptions", bloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
+    props.put("classpath", fixedClasspath.apply(bloopProject).mkString(java.io.File.pathSeparator))
+
+    nosbt.io.IO.write(props, "mdoc properties", out.toFile)
+    started.logger.info(s"wrote $out")
+
+    Files.createDirectories(mdocOut)
+    val cp = outDir :: getJars(scalaVersions, mdocDependency)
+    cli(
+      List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
+      started.logger,
+      "mdoc"
+    )(started.buildPaths.cwd)
+  }
+
+  // Optional classpath to use for Mdoc.js worker - if not provided, the classpath will be formed by resolving the worker dependency
+  val mdocJSWorkerClasspath: Option[Seq[Path]] = None
+
+  def linkerDependency(version: String) = Dep.ScalaDependency(
+    Organization("org.scala-js"),
+    ModuleName("scalajs-linker"),
+    version,
+    fullCrossVersion = false,
+    for3Use213 = true
   )
 
-  override def projectSettings: Seq[Def.Setting[_]] =
-    List(
-      mdocIn := baseDirectory.in(ThisBuild).value / "docs",
-      mdocOut := target.in(Compile).value / "mdoc",
-      mdocVariables := Map.empty,
-      mdocExtraArguments := Nil,
-      mdocJS := None,
-      mdocJSLibraries := Nil,
-      mdocJSWorkerClasspath := None,
-      mdocAutoDependency := true,
-      mdocInternalVariables := Nil,
-      mdoc := Def.inputTaskDyn {
-        validateSettings.value
-        val parsed = sbt.complete.DefaultParsers.spaceDelimited("<arg>").parsed
-        val args = Iterator(
-          mdocExtraArguments.value,
-          parsed
-        ).flatten.mkString(" ")
-        Def.taskDyn {
-          runMain.in(Compile).toTask(s" mdoc.Main $args")
-        }
-      }.evaluated,
-      libraryDependencies ++= {
-        val isJS = mdocJS.value.isDefined
-        if (mdocAutoDependency.value) {
-          val suffix = if (isJS) "-js" else ""
-          List("org.scalameta" %% s"mdoc$suffix" % BuildInfo.version)
-        } else {
-          List()
-        }
-      },
-      resourceGenerators.in(Compile) += Def.task {
-        val out =
-          managedResourceDirectories.in(Compile).value.head / "mdoc.properties"
-        val props = new java.util.Properties()
-        mdocVariables.value.foreach { case (key, value) =>
-          props.put(key, value)
-        }
-        mdocInternalVariables.value.foreach { case (key, value) =>
-          props.put(key, value)
-        }
-        def getJars(mid: ModuleID) = {
+  val mdocJSDependency =
+    Dep.Scala("org.scala-js", "mdoc-js-worker", mdocVersion)
 
-          val depRes = dependencyResolution.in(update).value
-          val updc = updateConfiguration.in(update).value
-          val uwconfig = unresolvedWarningConfiguration.in(update).value
-          val modDescr = depRes.wrapDependencyInModule(mid)
-
-          depRes
-            .update(
-              modDescr,
-              updc,
-              uwconfig,
-              streams.value.log
-            )
-            .map(_.allFiles)
-            .fold(uw => throw uw.resolveException, identity)
-        }
-
-        val binaryVersion = scalaBinaryVersion.value
-        val log = streams.value.log
-        val libraries = mdocJSLibraries.value.map(_.data)
-        val workerClasspathOverride = mdocJSWorkerClasspath.value
-
-        mdocJSCompileOptions.value.foreach { options =>
-          val sjsVersion = detectScalaJSVersion
-
-          val linkerDependency = binaryVersion match {
-            case "3" => "org.scala-js" % "scalajs-linker_2.13" % sjsVersion
-            case other => "org.scala-js" % s"scalajs-linker_$other" % sjsVersion
-          }
-
-          val mdocJSDependency = binaryVersion match {
-            case "3" => "org.scalameta" % "mdoc-js-worker_3" % BuildInfo.version
-            case other => "org.scalameta" % s"mdoc-js-worker_$other" % BuildInfo.version
-          }
-
-          val workerClasspath = workerClasspathOverride.getOrElse(getJars(mdocJSDependency))
-
-          MdocJSConfiguration(
-            scalacOptions = options.options,
-            compileClasspath = options.classpath,
-            linkerClassPath = getJars(linkerDependency) ++ workerClasspath,
-            moduleKind = options.moduleKind,
-            jsLibraries = libraries
-          ).writeTo(props)
-        }
-        props.put("in", mdocIn.value.toString)
-        props.put("out", mdocOut.value.toString)
-        props.put(
-          "scalacOptions",
-          scalacOptions.in(Compile).value.mkString(" ")
-        )
-        val classpath = ListBuffer.empty[File]
-        // Can't use fullClasspath.value because it introduces cyclic dependency between
-        // compilation and resource generation.
-        classpath ++= dependencyClasspath.in(Compile).value.iterator.map(_.data)
-        classpath += classDirectory.in(Compile).value
-        props.put(
-          "classpath",
-          classpath.mkString(java.io.File.pathSeparator)
-        )
-        IO.write(props, "mdoc properties", out)
-        List(out)
-      }
-    )
-
-  case class MdocJSConfiguration(
-      scalacOptions: Seq[String],
-      compileClasspath: Seq[File],
-      linkerClassPath: Seq[File],
-      moduleKind: Option[String],
-      jsLibraries: Seq[File]
-  ) {
-    def writeTo(props: java.util.Properties): Unit = {
-
-      props.put(
-        s"js-scalac-options",
-        scalacOptions.mkString(" ")
-      )
-      props.put(
-        s"js-classpath",
-        compileClasspath.mkString(File.pathSeparator)
-      )
-      props.put(
-        s"js-linker-classpath",
-        linkerClassPath.mkString(File.pathSeparator)
-      )
-      props.put(
-        s"js-libraries",
-        jsLibraries.mkString(File.pathSeparator)
-      )
-      moduleKind.foreach { moduleKind => props.put(s"js-module-kind", moduleKind) }
-    }
-  }
-
-  private lazy val mdocJSCompileOptions: Def.Initialize[Task[Option[CompileOptions]]] =
-    Def.taskDyn[Option[CompileOptions]] {
-      mdocJS.value match {
-        case Some(p) =>
-          mdocCompileOptions(p).map(Some(_))
-        case None =>
-          Def.task(None)
-      }
-    }
-  private case class CompileOptions(
-      options: Seq[String],
-      classpath: Seq[File],
-      moduleKind: Option[String]
-  )
-  private lazy val anyWriter = implicitly[sbt.util.OptJsonWriter[AnyRef]]
-  // Loads a setting by fully qualified classname so that we don't have to depend on that sbt plugin directly.
-  // Adapted from sbt-bloop sources: https://github.com/scalacenter/bloop/blob/ec217891ebd5190a0a66d6faf5bd000a6d951f3c/integrations/sbt-bloop/src/main/scala/bloop/integrations/sbt/SbtBloop.scala
-  private def classloadedSetting(
-      ref: Project,
-      fullyQualifiedClassName: String,
-      attributeName: String
-  ): Def.Initialize[Option[AnyRef]] =
-    Def.settingDyn {
-      def proxyForSetting(): Def.Initialize[Option[AnyRef]] = {
-        val cls = Class.forName(fullyQualifiedClassName)
-        val stageManifest = new Manifest[AnyRef] { override def runtimeClass: Class[_] = cls }
-        SettingKey(attributeName)(stageManifest, anyWriter).in(ref).?
-      }
-      try {
-        val stageSetting = proxyForSetting()
-        Def.setting {
-          stageSetting.value
-        }
-      } catch {
-        case _: ClassNotFoundException => Def.setting(None)
-      }
-    }
-  private def mdocCompileOptions(ref: Project): Def.Initialize[Task[CompileOptions]] =
-    Def.task {
-      CompileOptions(
-        scalacOptions.in(ref, Compile).value,
-        fullClasspath.in(ref, Compile).value.map(_.data),
-        classloadedSetting(
-          ref,
-          "org.scalajs.linker.interface.StandardConfig",
-          "scalaJSLinkerConfig"
-        ).value.map { config =>
-          config.getClass.getMethod("moduleKind").invoke(config).toString
-        }
-      )
+  def getJars(scalaVersions: ScalaVersions.WithScala, deps: Dep*): List[Path] =
+    started.resolver.forceGet(JsonSet.fromIterable(deps).map(_.forceDependency(scalaVersions)), Some(scalaVersions.scalaVersion)) match {
+      case Left(err)    => throw new BuildException.ResolveError(err, "booting mdoc")
+      case Right(value) => value.jars
     }
 
-  def detectScalaJSVersion = {
-    val klass =
-      Class.forName("org.scalajs.ir.ScalaJSVersions", true, getClass.getClassLoader())
-    val method = klass.getMethod("current")
-    method.invoke(null).asInstanceOf[String]
-  }
+  def getScalaVersions(explodedProject: model.Project) =
+    ScalaVersions.fromExplodedProject(explodedProject) match {
+      case Left(err)                                 => throw new BuildException.Text(s"Invalid project for mdoc: $err")
+      case Right(ScalaVersions.Java)                 => throw new BuildException.Text(s"Invalid project for mdoc: was java project")
+      case Right(withScala: ScalaVersions.WithScala) => withScala
+    }
 }

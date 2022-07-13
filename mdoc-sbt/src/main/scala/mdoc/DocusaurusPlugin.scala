@@ -1,50 +1,23 @@
 package mdoc
 
-import java.nio.file.FileVisitResult
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.SimpleFileVisitor
-import java.nio.file.attribute.BasicFileAttributes
-import sbt._
-import sbt.Keys._
-import sbt.plugins.JvmPlugin
+import bleep.internal.FileUtils
+import bleep.logging.Logger
+import bleep.{cli, createJar, PathOps}
 import sbtdocusaurus.internal.Relativize
-import scala.sys.process.Process
-import scala.sys.process.ProcessBuilder
-import mdoc.MdocPlugin.{autoImport => m}
+
+import java.nio.file.{Files, Path}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.Try
 
-object DocusaurusPlugin extends AutoPlugin {
-  override def requires: Plugins = JvmPlugin && MdocPlugin
-  object autoImport {
-    val docusaurusProjectName =
-      taskKey[String]("The siteConfig.js `projectName` setting value")
-    val docusaurusCreateSite =
-      taskKey[File]("Create static build of docusaurus site")
-    val docusaurusPublishGhpages =
-      taskKey[Unit]("Publish docusaurus site to GitHub pages")
-  }
-  import autoImport._
-  def website: Def.Initialize[File] =
-    Def.setting {
-      baseDirectory.in(ThisBuild).value / "website"
-    }
-
-  def listJarFiles(root: Path): List[(File, String)] = {
-    val files = List.newBuilder[(File, String)]
-    Files.walkFileTree(
-      root,
-      new SimpleFileVisitor[Path] {
-        override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
-          val relpath = root.relativize(file)
-          files += (file.toFile -> relpath.toString)
-          super.visitFile(file, attrs)
-        }
-      }
-    )
-    files.result()
-  }
-
+class DocusaurusPlugin(
+    website: Path,
+    m: MdocPlugin,
+    // The siteConfig.js `projectName` setting value
+    docusaurusProjectName: String,
+    yarn: Path,
+    logger: Logger
+) {
   def gitUser(): String =
     sys.env.getOrElse(
       "GIT_USER", {
@@ -54,120 +27,114 @@ object DocusaurusPlugin extends AutoPlugin {
       }
     )
   def installSsh: String =
-    """|#!/usr/bin/env bash
-       |
-       |set -eu
-       |DEPLOY_KEY=${GIT_DEPLOY_KEY:-${GITHUB_DEPLOY_KEY:-}}
-       |set-up-ssh() {
-       |  echo "Setting up ssh..."
-       |  mkdir -p $HOME/.ssh
-       |  ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
-       |  git config --global user.name "Docusaurus bot"
-       |  git config --global user.email "${MDOC_EMAIL:-mdoc@docusaurus}"
-       |  git config --global push.default simple
-       |  DEPLOY_KEY_FILE=$HOME/.ssh/id_rsa
-       |  echo "$DEPLOY_KEY" | base64 --decode > ${DEPLOY_KEY_FILE}
-       |  chmod 600 ${DEPLOY_KEY_FILE}
-       |  eval "$(ssh-agent -s)"
-       |  ssh-add ${DEPLOY_KEY_FILE}
-       |}
-       |
-       |if [[ -n "${DEPLOY_KEY:-}" ]]; then
-       |  set-up-ssh
-       |else
-       |  echo "No deploy key found. Attempting to auth with ssh key saved in ssh-agent. To use a deploy key instead, set the GIT_DEPLOY_KEY environment variable."
-       |fi
-       |
-       |yarn install
-       |USE_SSH=true yarn publish-gh-pages
+    s"""|#!/usr/bin/env bash
+        |
+        |set -eu
+        |DEPLOY_KEY=$${GIT_DEPLOY_KEY:-$${GITHUB_DEPLOY_KEY:-}}
+        |set-up-ssh() {
+        |  echo "Setting up ssh..."
+        |  mkdir -p $$HOME/.ssh
+        |  ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+        |  git config --global user.name "Docusaurus bot"
+        |  git config --global user.email "$${MDOC_EMAIL:-mdoc@docusaurus}"
+        |  git config --global push.default simple
+        |  DEPLOY_KEY_FILE=$$HOME/.ssh/id_rsa
+        |  echo "$$DEPLOY_KEY" | base64 --decode > $${DEPLOY_KEY_FILE}
+        |  chmod 600 $${DEPLOY_KEY_FILE}
+        |  eval "$$(ssh-agent -s)"
+        |  ssh-add $${DEPLOY_KEY_FILE}
+        |}
+        |
+        |if [[ -n "$${DEPLOY_KEY:-}" ]]; then
+        |  set-up-ssh
+        |else
+        |  echo "No deploy key found. Attempting to auth with ssh key saved in ssh-agent. To use a deploy key instead, set the GIT_DEPLOY_KEY environment variable."
+        |fi
+        |
+        |$yarn install
+        |USE_SSH=true $yarn publish-gh-pages
     """.stripMargin
 
   def installSshWindows: String =
-    """|@echo off
-       |call yarn install
-       |set USE_SSH=true
-       |call yarn publish-gh-pages
+    s"""|@echo off
+        |call $yarn install
+        |set USE_SSH=true
+        |call $yarn publish-gh-pages
     """.stripMargin
 
-  override def projectSettings: Seq[Def.Setting[_]] =
-    List(
-      aggregate.in(docusaurusPublishGhpages) := false,
-      aggregate.in(docusaurusCreateSite) := false,
-      docusaurusProjectName := moduleName.value.stripSuffix("-docs"),
-      MdocPlugin.mdocInternalVariables ++= List(
-        "js-out-prefix" -> "assets"
-      ),
-      docusaurusPublishGhpages := {
-        m.mdoc.toTask(" ").value
+  val mdocInternalVariables: List[(String, String)] = List(
+    "js-out-prefix" -> "assets"
+  )
 
-        val tmp =
-          if (scala.util.Properties.isWin) {
-            val tmp = Files.createTempFile("docusaurus", "install_ssh.bat")
-            Files.write(tmp, installSshWindows.getBytes())
-            tmp
-          } else {
-            val tmp = Files.createTempFile("docusaurus", "install_ssh.sh")
-            Files.write(tmp, installSsh.getBytes())
-            tmp
-          }
+  // Publish docusaurus site to GitHub pages
+  def docusaurusPublishGhpages(mdocArgs: List[String]): Unit = {
+    m.mdoc(mdocInternalVariables, mdocArgs)
 
-        tmp.toFile.setExecutable(true)
-        Process(
-          tmp.toString,
-          cwd = website.value,
-          "GIT_USER" -> gitUser(),
-          "USE_SSH" -> "true"
-        ).execute()
-      },
-      docusaurusCreateSite := {
-        m.mdoc.in(Compile).toTask(" ").value
-        Process(List("yarn", "install"), cwd = website.value).execute()
-        Process(List("yarn", "run", "build"), cwd = website.value).execute()
-        val redirectUrl = docusaurusProjectName.value + "/index.html"
-        val html = redirectHtml(redirectUrl)
-        val out = website.value / "build"
-        IO.write(out / "index.html", html)
-        out
-      },
-      cleanFiles := {
-        val buildFolder = website.value / "build"
-        val nodeModules = website.value / "node_modules"
-        val currentCleanFiles = cleanFiles.value
-
-        val docusaurusFolders = Seq(buildFolder, nodeModules).filter(_.exists())
-        docusaurusFolders ++ currentCleanFiles
-      },
-      doc := {
-        val out = docusaurusCreateSite.value
-        Relativize.htmlSite(out.toPath)
-        out
-      },
-      packageDoc.in(Compile) := {
-        val directory = doc.value
-        val jar = target.value / "docusaurus.jar"
-        val files = listJarFiles(directory.toPath)
-        IO.jar(files, jar, new java.util.jar.Manifest())
-        jar
+    val tmp =
+      if (scala.util.Properties.isWin) {
+        val tmp = Files.createTempFile("docusaurus", "install_ssh.bat")
+        Files.write(tmp, installSshWindows.getBytes())
+        tmp
+      } else {
+        val tmp = Files.createTempFile("docusaurus", "install_ssh.sh")
+        Files.write(tmp, installSsh.getBytes())
+        tmp
       }
+
+    tmp.toFile.setExecutable(true)
+    cli(
+      List(tmp.toString),
+      logger,
+      "install_ssh",
+      env = List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
+    )(website)
+  }
+
+  // Create static build of docusaurus site
+  def docusaurusCreateSite(mdocArgs: List[String]): Path = {
+    m.mdoc(mdocInternalVariables, mdocArgs)
+    cli(List(yarn.toString, "install"), logger, "yarn install")(website)
+    cli(List(yarn.toString, "run", "build"), logger, "yarn run build")(website)
+    val redirectUrl = docusaurusProjectName + "/index.html"
+    val html = redirectHtml(redirectUrl)
+    val out = website / "build"
+    Files.writeString(out / "index.html", html)
+    out
+  }
+
+  def cleanFiles(): Seq[Path] = {
+    val buildFolder = website / "build"
+    val nodeModules = website / "node_modules"
+    val docusaurusFolders = Seq(buildFolder, nodeModules).filter(FileUtils.exists)
+    docusaurusFolders
+  }
+
+  def doc(mdocArgs: List[String]): Path = {
+    val out = docusaurusCreateSite(mdocArgs)
+    Relativize.htmlSite(out)
+    out
+  }
+
+  def dev(implicit ec: ExecutionContext): Unit =
+    Await.result(
+      Future.firstCompletedOf(
+        List(
+          Future(m.mdoc(mdocInternalVariables, List("--watch"))),
+          Future(cli(List(yarn.toString, "start"), logger, "yarn start")(website))
+        )
+      ),
+      Duration.Inf
     )
 
-  private implicit class XtensionListStringProcess(command: List[String]) {
-    def execute(): Unit = {
-      Process(command).execute()
-    }
+  def packageDoc(target: Path, mdocArgs: List[String]): Path = {
+    val directory = doc(mdocArgs)
+    val bytes = createJar(List(directory))
+    val jar = target / "docusaurus.jar"
+    Files.write(jar, bytes)
+    jar
   }
-  private implicit class XtensionStringProcess(command: String) {
-    def execute(): Unit = {
-      Process(command).execute()
-    }
-  }
-  private implicit class XtensionProcess(command: ProcessBuilder) {
-    def execute(): Unit = {
-      val exit = command.!
-      assert(exit == 0, s"command returned $exit: $command")
-    }
-  }
-  private def redirectHtml(url: String): String = {
+
+  private def redirectHtml(url: String): String =
     s"""
        |<!DOCTYPE HTML>
        |<html lang="en-US">
@@ -184,6 +151,4 @@ object DocusaurusPlugin extends AutoPlugin {
        |    </body>
        |</html>
       """.stripMargin
-  }
-
 }

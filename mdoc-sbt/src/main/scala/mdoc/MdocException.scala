@@ -1,7 +1,6 @@
 package mdoc
 
-import sbt.internal.util.FeedbackProvidedException
+import bleep.BuildException
 
-case class MdocException(message: String)
-    extends Exception(message: String)
-    with FeedbackProvidedException
+class MdocException(message: String)
+    extends BuildException(message)
