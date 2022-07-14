@@ -12,11 +12,12 @@ import scala.util.Try
 
 class DocusaurusPlugin(
     website: Path,
-    m: MdocPlugin,
+    mdoc: MdocPlugin,
     // The siteConfig.js `projectName` setting value
     docusaurusProjectName: String,
     yarn: Path,
-    logger: Logger
+    logger: Logger,
+    isDocusaurus2: Boolean
 ) {
   def gitUser(): String =
     sys.env.getOrElse(
@@ -52,14 +53,14 @@ class DocusaurusPlugin(
         |fi
         |
         |$yarn install
-        |USE_SSH=true $yarn publish-gh-pages
+        |USE_SSH=true $yarn ${if (isDocusaurus2) "deploy" else "publish-gh-pages"}
     """.stripMargin
 
   def installSshWindows: String =
     s"""|@echo off
         |call $yarn install
         |set USE_SSH=true
-        |call $yarn publish-gh-pages
+        |call $yarn ${if (isDocusaurus2) "deploy" else "publish-gh-pages"}
     """.stripMargin
 
   val mdocInternalVariables: List[(String, String)] = List(
@@ -68,7 +69,7 @@ class DocusaurusPlugin(
 
   // Publish docusaurus site to GitHub pages
   def docusaurusPublishGhpages(mdocArgs: List[String]): Unit = {
-    m.mdoc(mdocInternalVariables, mdocArgs)
+    mdoc.mdoc(mdocInternalVariables, mdocArgs)
 
     val tmp =
       if (scala.util.Properties.isWin) {
@@ -92,7 +93,7 @@ class DocusaurusPlugin(
 
   // Create static build of docusaurus site
   def docusaurusCreateSite(mdocArgs: List[String]): Path = {
-    m.mdoc(mdocInternalVariables, mdocArgs)
+    mdoc.mdoc(mdocInternalVariables, mdocArgs)
     cli(List(yarn.toString, "install"), logger, "yarn install")(website)
     cli(List(yarn.toString, "run", "build"), logger, "yarn run build")(website)
     val redirectUrl = docusaurusProjectName + "/index.html"
@@ -119,7 +120,7 @@ class DocusaurusPlugin(
     Await.result(
       Future.firstCompletedOf(
         List(
-          Future(m.mdoc(mdocInternalVariables, List("--watch"))),
+          Future(mdoc.mdoc(mdocInternalVariables, List("--watch"))),
           Future(cli(List(yarn.toString, "start"), logger, "yarn start")(website))
         )
       ),
