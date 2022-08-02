@@ -1,6 +1,6 @@
 package mdoc
 
-import bleep.BuildException
+import bleep.BleepException
 
 class MdocException(message: String)
-    extends BuildException(message)
+    extends BleepException(message)

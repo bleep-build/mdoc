@@ -1,7 +1,8 @@
 package mdoc
 
-import bleep._
 import bleep.internal.dependencyOrdering
+import bleep.model.{Dep, JsonSet, VersionScalaPlatform}
+import bleep._
 import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
 
@@ -56,7 +57,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       val jsBloopProject = started.bloopProjects(jsCrossProjectName)
       val jsPlatform: Platform.Js = jsBloopProject.platform match {
         case Some(js: Platform.Js) => js
-        case other                 => throw new BuildException.Text(s"Expected Scala.js project, got $other")
+        case other                 => throw new BleepException.Text(s"Expected Scala.js project, got $other")
       }
       val jsExplodedProject = started.build.projects(jsCrossProjectName)
 
@@ -108,14 +109,14 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
 
   def getJars(scalaPlatform: VersionScalaPlatform.WithScala, deps: Dep*): List[Path] =
     started.resolver.forceGet.resolve(JsonSet.fromIterable(deps).map(_.forceDependency(scalaPlatform)), Some(scalaPlatform.scalaVersion)) match {
-      case Left(err)    => throw new BuildException.ResolveError(err, "booting mdoc")
+      case Left(err)    => throw new BleepException.ResolveError(err, "booting mdoc")
       case Right(value) => value.jars
     }
 
   def getScalaPlatform(explodedProject: model.Project) =
     VersionScalaPlatform.fromExplodedProject(explodedProject) match {
-      case Left(err)                                 => throw new BuildException.Text(s"Invalid project for mdoc: $err")
-      case Right(VersionScalaPlatform.Java)                 => throw new BuildException.Text(s"Invalid project for mdoc: was java project")
+      case Left(err)                                        => throw new BleepException.Text(s"Invalid project for mdoc: $err")
+      case Right(VersionScalaPlatform.Java)                 => throw new BleepException.Text(s"Invalid project for mdoc: was java project")
       case Right(withScala: VersionScalaPlatform.WithScala) => withScala
     }
 }
