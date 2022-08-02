@@ -1,7 +1,6 @@
 package mdoc
 
 import bleep._
-import bleep.model.{Dep, VersionScalaPlatform}
 import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
 
@@ -29,9 +28,9 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     )
   }
 
-  def mdocDependency: Dep.ScalaDependency = {
+  def mdocDependency: model.Dep.ScalaDependency = {
     val suffix = if (mdocJS.isDefined) "-js" else ""
-    Dep.Scala("org.scalameta", s"mdoc$suffix", mdocVersion)
+    model.Dep.Scala("org.scalameta", s"mdoc$suffix", mdocVersion)
   }
 
   // Run mdoc to generate markdown sources. Supports arguments like --watch to start the file watcher with livereload.
@@ -95,7 +94,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
   // Optional classpath to use for Mdoc.js worker - if not provided, the classpath will be formed by resolving the worker dependency
   val mdocJSWorkerClasspath: Option[Seq[Path]] = None
 
-  def linkerDependency(version: String) = Dep.ScalaDependency(
+  def linkerDependency(version: String) = model.Dep.ScalaDependency(
     Organization("org.scala-js"),
     ModuleName("scalajs-linker"),
     version,
@@ -104,18 +103,18 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
   )
 
   val mdocJSDependency =
-    Dep.Scala("org.scala-js", "mdoc-js-worker", mdocVersion)
+    model.Dep.Scala("org.scala-js", "mdoc-js-worker", mdocVersion)
 
-  def getJars(scalaPlatform: VersionScalaPlatform.WithScala, deps: Dep*): List[Path] =
-    started.resolver.forceGet.resolve(deps.toSet[Dep].map(_.forceDependency(scalaPlatform)), Some(scalaPlatform.scalaVersion)) match {
+  def getJars(scalaPlatform: model.VersionScalaPlatform.WithScala, deps: model.Dep*): List[Path] =
+    started.resolver.forceGet.resolve(deps.toSet[model.Dep].map(_.forceDependency(scalaPlatform)), Some(scalaPlatform.scalaVersion)) match {
       case Left(err)    => throw new BleepException.ResolveError(err, "booting mdoc")
       case Right(value) => value.jars
     }
 
   def getScalaPlatform(explodedProject: model.Project) =
-    VersionScalaPlatform.fromExplodedProject(explodedProject) match {
+    model.VersionScalaPlatform.fromExplodedProject(explodedProject) match {
       case Left(err)                                        => throw new BleepException.Text(s"Invalid project for mdoc: $err")
-      case Right(VersionScalaPlatform.Java)                 => throw new BleepException.Text(s"Invalid project for mdoc: was java project")
-      case Right(withScala: VersionScalaPlatform.WithScala) => withScala
+      case Right(model.VersionScalaPlatform.Java)                 => throw new BleepException.Text(s"Invalid project for mdoc: was java project")
+      case Right(withScala: model.VersionScalaPlatform.WithScala) => withScala
     }
 }
