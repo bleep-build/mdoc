@@ -1,8 +1,7 @@
 package mdoc
 
-import bleep.internal.dependencyOrdering
-import bleep.model.{Dep, JsonSet, VersionScalaPlatform}
 import bleep._
+import bleep.model.{Dep, VersionScalaPlatform}
 import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
 
@@ -108,7 +107,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     Dep.Scala("org.scala-js", "mdoc-js-worker", mdocVersion)
 
   def getJars(scalaPlatform: VersionScalaPlatform.WithScala, deps: Dep*): List[Path] =
-    started.resolver.forceGet.resolve(JsonSet.fromIterable(deps).map(_.forceDependency(scalaPlatform)), Some(scalaPlatform.scalaVersion)) match {
+    started.resolver.forceGet.resolve(deps.toSet[Dep].map(_.forceDependency(scalaPlatform)), Some(scalaPlatform.scalaVersion)) match {
       case Left(err)    => throw new BleepException.ResolveError(err, "booting mdoc")
       case Right(value) => value.jars
     }
