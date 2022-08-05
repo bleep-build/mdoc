@@ -85,10 +85,11 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     Files.createDirectories(mdocOut)
     val cp = outDir :: getJars(scalaPlatform, mdocDependency)
     cli(
-      List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
-      started.logger,
-      "mdoc"
-    )(started.buildPaths.cwd)
+      action = "mdoc",
+      cwd = started.buildPaths.cwd,
+      cmd = List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
+      logger = started.logger,
+    )
   }
 
   // Optional classpath to use for Mdoc.js worker - if not provided, the classpath will be formed by resolving the worker dependency

@@ -84,18 +84,19 @@ class DocusaurusPlugin(
 
     tmp.toFile.setExecutable(true)
     cli(
-      List(tmp.toString),
-      logger,
-      "install_ssh",
+      action = "install_ssh",
+      cwd = website,
+      cmd = List(tmp.toString),
+      logger = logger,
       env = List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
-    )(website)
+    )
   }
 
   // Create static build of docusaurus site
   def docusaurusCreateSite(mdocArgs: List[String]): Path = {
     mdoc.mdoc(mdocInternalVariables, mdocArgs)
-    cli(List(yarn.toString, "install"), logger, "yarn install")(website)
-    cli(List(yarn.toString, "run", "build"), logger, "yarn run build")(website)
+    cli(action = "yarn install", cwd = website, cmd = List(yarn.toString, "install"), logger = logger)
+    cli(action = "yarn run build", cwd = website, cmd = List(yarn.toString, "run", "build"), logger = logger)
     val redirectUrl = docusaurusProjectName + "/index.html"
     val html = redirectHtml(redirectUrl)
     val out = website / "build"
@@ -121,7 +122,7 @@ class DocusaurusPlugin(
       Future.firstCompletedOf(
         List(
           Future(mdoc.mdoc(mdocInternalVariables, List("--watch"))),
-          Future(cli(List(yarn.toString, "start"), logger, "yarn start")(website))
+          Future(cli(action = "yarn start", cwd = website, cmd = List(yarn.toString, "start"), logger = logger))
         )
       ),
       Duration.Inf
