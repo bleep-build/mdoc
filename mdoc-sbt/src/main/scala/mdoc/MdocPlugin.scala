@@ -43,7 +43,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     val bloopProject = started.bloopProjects(crossProjectName)
     val explodedProject = started.build.projects(crossProjectName)
 
-    val scalaPlatform = getScalaPlatform(explodedProject)
+    val versionCombo = getVersionCombo(explodedProject)
 
     val out = outDir / "mdoc.properties"
     val props = new java.util.Properties()
@@ -59,14 +59,14 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       }
       val jsExplodedProject = started.build.projects(jsCrossProjectName)
 
-      val jsScalaPlatform = getScalaPlatform(jsExplodedProject)
+      val jsVersionCombo = getVersionCombo(jsExplodedProject)
 
       props.put(s"js-scalac-options", jsBloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
       props.put(s"js-classpath", jsBloopProject.classpath.mkString(File.pathSeparator))
       props.put(
         s"js-linker-classpath", {
-          val linkerJars = getJars(jsScalaPlatform, linkerDependency(jsPlatform.config.version))
-          val workerClasspath = mdocJSWorkerClasspath.getOrElse(getJars(jsScalaPlatform, mdocJSDependency))
+          val linkerJars = getJars(jsVersionCombo, linkerDependency(jsPlatform.config.version))
+          val workerClasspath = mdocJSWorkerClasspath.getOrElse(getJars(jsVersionCombo, mdocJSDependency))
           (linkerJars ++ workerClasspath).mkString(File.pathSeparator)
         }
       )
@@ -83,12 +83,12 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     started.logger.info(s"wrote $out")
 
     Files.createDirectories(mdocOut)
-    val cp = outDir :: getJars(scalaPlatform, mdocDependency)
+    val cp = outDir :: getJars(versionCombo, mdocDependency)
     cli(
       action = "mdoc",
       cwd = started.buildPaths.cwd,
       cmd = List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
-      logger = started.logger,
+      logger = started.logger
     )
   }
 
@@ -106,16 +106,16 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
   val mdocJSDependency =
     model.Dep.Scala("org.scala-js", "mdoc-js-worker", mdocVersion)
 
-  def getJars(scalaPlatform: model.VersionScalaPlatform.WithScala, deps: model.Dep*): List[Path] =
-    started.resolver.forceGet.resolve(deps.toSet[model.Dep].map(_.forceDependency(scalaPlatform)), Some(scalaPlatform.scalaVersion)) match {
+  def getJars(scalaCombo: model.VersionCombo.Scala, deps: model.Dep*): List[Path] =
+    started.resolver.forceGet.resolve(deps.toSet, scalaCombo) match {
       case Left(err)    => throw new BleepException.ResolveError(err, "booting mdoc")
       case Right(value) => value.jars
     }
 
-  def getScalaPlatform(explodedProject: model.Project) =
-    model.VersionScalaPlatform.fromExplodedProject(explodedProject) match {
-      case Left(err)                                        => throw new BleepException.Text(s"Invalid project for mdoc: $err")
-      case Right(model.VersionScalaPlatform.Java)                 => throw new BleepException.Text(s"Invalid project for mdoc: was java project")
-      case Right(withScala: model.VersionScalaPlatform.WithScala) => withScala
+  def getVersionCombo(explodedProject: model.Project): model.VersionCombo.Scala =
+    model.VersionCombo.fromExplodedProject(explodedProject) match {
+      case Left(err)                                   => throw new BleepException.Text(s"Invalid project for mdoc: $err")
+      case Right(model.VersionCombo.Java)              => throw new BleepException.Text(s"Invalid project for mdoc: was java project")
+      case Right(scalaCombo: model.VersionCombo.Scala) => scalaCombo
     }
 }
