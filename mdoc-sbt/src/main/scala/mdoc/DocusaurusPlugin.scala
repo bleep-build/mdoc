@@ -15,7 +15,8 @@ class DocusaurusPlugin(
     mdoc: MdocPlugin,
     // The siteConfig.js `projectName` setting value
     docusaurusProjectName: String,
-    yarn: Path,
+    // should ensure `npm` and `node` is available in `PATH`
+    env: List[(String, String)],
     logger: Logger,
     isDocusaurus2: Boolean
 ) {
@@ -52,15 +53,15 @@ class DocusaurusPlugin(
         |  echo "No deploy key found. Attempting to auth with ssh key saved in ssh-agent. To use a deploy key instead, set the GIT_DEPLOY_KEY environment variable."
         |fi
         |
-        |$yarn install
-        |USE_SSH=true $yarn ${if (isDocusaurus2) "deploy" else "publish-gh-pages"}
+        |npm install
+        |USE_SSH=true npm run ${if (isDocusaurus2) "deploy" else "publish-gh-pages"}
     """.stripMargin
 
   def installSshWindows: String =
     s"""|@echo off
-        |call $yarn install
+        |call npm install
         |set USE_SSH=true
-        |call $yarn ${if (isDocusaurus2) "deploy" else "publish-gh-pages"}
+        |call npm run ${if (isDocusaurus2) "deploy" else "publish-gh-pages"}
     """.stripMargin
 
   val mdocInternalVariables: List[(String, String)] = List(
@@ -88,15 +89,15 @@ class DocusaurusPlugin(
       cwd = website,
       cmd = List(tmp.toString),
       cliLogger = cli.CliLogger(logger),
-      env = List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
+      env = env ++ List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
     )
   }
 
   // Create static build of docusaurus site
   def docusaurusCreateSite(mdocArgs: List[String]): Path = {
     mdoc.mdoc(mdocInternalVariables, mdocArgs)
-    cli(action = "yarn install", cwd = website, cmd = List(yarn.toString, "install"), cliLogger = cli.CliLogger(logger))
-    cli(action = "yarn run build", cwd = website, cmd = List(yarn.toString, "run", "build"), cliLogger = cli.CliLogger(logger))
+    cli(action = "npm install", cwd = website, cmd = List("npm", "install"), cliLogger = cli.CliLogger(logger), env = env)
+    cli(action = "npm run build", cwd = website, cmd = List("npm", "run", "build"), cliLogger = cli.CliLogger(logger), env = env)
     val redirectUrl = docusaurusProjectName + "/index.html"
     val html = redirectHtml(redirectUrl)
     val out = website / "build"
@@ -122,7 +123,10 @@ class DocusaurusPlugin(
       Future.firstCompletedOf(
         List(
           Future(mdoc.mdoc(mdocInternalVariables, List("--watch"))),
-          Future(cli(action = "yarn start", cwd = website, cmd = List(yarn.toString, "start"), cliLogger = cli.CliLogger(logger)))
+          Future {
+            cli(action = "npm install", cwd = website, cmd = List("npm", "install"), cliLogger = cli.CliLogger(logger), env = env)
+            cli(action = "npm run start", cwd = website, cmd = List("npm", "run", "start"), cliLogger = cli.CliLogger(logger), env = env)
+          }
         )
       ),
       Duration.Inf
