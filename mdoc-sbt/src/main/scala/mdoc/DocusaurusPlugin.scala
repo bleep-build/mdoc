@@ -2,7 +2,8 @@ package mdoc
 
 import bleep.internal.FileUtils
 import bleep.logging.Logger
-import bleep.{cli, createJar, PathOps}
+import bleep.packaging.createJar
+import bleep.{cli, PathOps}
 import sbtdocusaurus.internal.Relativize
 
 import java.nio.file.{Files, Path}
