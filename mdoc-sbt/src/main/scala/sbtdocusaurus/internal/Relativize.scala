@@ -1,16 +1,12 @@
 package sbtdocusaurus.internal
 
-import java.net.URI
-import java.nio.charset.Charset
-import java.nio.charset.StandardCharsets
-import java.nio.file.FileVisitResult
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.nio.file.SimpleFileVisitor
-import java.nio.file.attribute.BasicFileAttributes
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+
+import java.net.URI
+import java.nio.charset.StandardCharsets
+import java.nio.file._
+import java.nio.file.attribute.BasicFileAttributes
 import scala.collection.JavaConverters._
 
 object Relativize {
@@ -27,6 +23,7 @@ object Relativize {
         }
       }
     )
+    ()
   }
 
   // actual host name doesn't matter
@@ -52,6 +49,7 @@ object Relativize {
           else "#" + absoluteHref.getFragment
         val newHref = relativeUri(relativeHref).toString + fragment
         element.attr(attribute, newHref)
+        ()
       } else if (element.attr(attribute).startsWith("//")) {
         // We force "//hostname" links to become "https://hostname" in order to make
         // the site browsable without file server. If we keep "//hostname"  unchanged
@@ -59,15 +57,18 @@ object Relativize {
         // We hardcode https instead of http because it's OK to load https from http
         // but not the other way around.
         element.attr(attribute, "https:" + element.attr(attribute))
+        ()
       }
     }
     val doc = Jsoup.parse(file.toFile, StandardCharsets.UTF_8.name(), originUri.toString)
     val attributesToRelativize = List("href", "src")
     attributesToRelativize.foreach { attribute =>
       doc.select(s"[$attribute]").forEach { element => relativizeAttribute(element, attribute) }
+      ()
     }
     val renderedHtml = doc.outerHtml()
     Files.write(file, renderedHtml.getBytes(StandardCharsets.UTF_8))
+    ()
   }
 
   private def relativeUri(relativePath: Path): URI = {

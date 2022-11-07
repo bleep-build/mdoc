@@ -92,6 +92,7 @@ class DocusaurusPlugin(
       cliLogger = cli.CliLogger(logger),
       env = env ++ List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
     )
+    ()
   }
 
   // Create static build of docusaurus site
@@ -119,7 +120,7 @@ class DocusaurusPlugin(
     out
   }
 
-  def dev(implicit ec: ExecutionContext): Unit =
+  def dev(implicit ec: ExecutionContext): Unit = {
     Await.result(
       Future.firstCompletedOf(
         List(
@@ -132,6 +133,8 @@ class DocusaurusPlugin(
       ),
       Duration.Inf
     )
+    ()
+  }
 
   def packageDoc(target: Path, mdocArgs: List[String]): Path = {
     val directory = doc(mdocArgs)

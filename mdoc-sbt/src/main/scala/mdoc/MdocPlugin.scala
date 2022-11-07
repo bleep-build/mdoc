@@ -90,6 +90,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       cmd = List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
       cliLogger = cli.CliLogger(started.logger)
     )
+    ()
   }
 
   // Optional classpath to use for Mdoc.js worker - if not provided, the classpath will be formed by resolving the worker dependency
