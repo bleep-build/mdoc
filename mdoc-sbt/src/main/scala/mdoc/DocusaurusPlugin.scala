@@ -1,10 +1,10 @@
-package mdoc
+package bleep.plugin.mdoc
 
 import bleep.internal.FileUtils
 import bleep.logging.Logger
 import bleep.packaging.createJar
-import bleep.{cli, PathOps}
-import sbtdocusaurus.internal.Relativize
+import bleep.plugin.mdoc.sbtdocusaurus.internal.Relativize
+import bleep.{PathOps, cli}
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.Duration

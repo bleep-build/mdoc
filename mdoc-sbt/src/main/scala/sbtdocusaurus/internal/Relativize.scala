@@ -1,4 +1,4 @@
-package sbtdocusaurus.internal
+package bleep.plugin.mdoc.sbtdocusaurus.internal
 
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element

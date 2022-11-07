@@ -1,4 +1,4 @@
-package mdoc
+package bleep.plugin.mdoc
 
 import bleep.BleepException
 

@@ -1,6 +1,7 @@
-package mdoc
+package bleep.plugin.mdoc
 
 import bleep._
+import bleep.plugin.nosbt.io.IO
 import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
 
@@ -79,7 +80,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     props.put("scalacOptions", bloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
     props.put("classpath", fixedClasspath.apply(bloopProject).mkString(java.io.File.pathSeparator))
 
-    nosbt.io.IO.write(props, "mdoc properties", out.toFile)
+    IO.write(props, "mdoc properties", out.toFile)
     started.logger.info(s"wrote $out")
 
     Files.createDirectories(mdocOut)
