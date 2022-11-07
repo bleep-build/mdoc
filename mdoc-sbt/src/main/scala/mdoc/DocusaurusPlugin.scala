@@ -4,7 +4,7 @@ import bleep.internal.FileUtils
 import bleep.logging.Logger
 import bleep.packaging.createJar
 import bleep.plugin.mdoc.sbtdocusaurus.internal.Relativize
-import bleep.{PathOps, cli}
+import bleep.{cli, PathOps}
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.Duration
