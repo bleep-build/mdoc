@@ -89,7 +89,8 @@ class DocusaurusPlugin(
       action = "install_ssh",
       cwd = website,
       cmd = List(tmp.toString),
-      cliLogger = cli.CliLogger(logger),
+      logger = logger,
+      out = cli.Out.ViaLogger(logger),
       env = env ++ List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
     )
     ()
@@ -98,8 +99,8 @@ class DocusaurusPlugin(
   // Create static build of docusaurus site
   def docusaurusCreateSite(mdocArgs: List[String]): Path = {
     mdoc.mdoc(mdocInternalVariables, mdocArgs)
-    cli(action = "npm install", cwd = website, cmd = List("npm", "install"), cliLogger = cli.CliLogger(logger), env = env)
-    cli(action = "npm run build", cwd = website, cmd = List("npm", "run", "build"), cliLogger = cli.CliLogger(logger), env = env)
+    cli(action = "npm install", cwd = website, cmd = List("npm", "install"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
+    cli(action = "npm run build", cwd = website, cmd = List("npm", "run", "build"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
     val redirectUrl = docusaurusProjectName + "/index.html"
     val html = redirectHtml(redirectUrl)
     val out = website / "build"
@@ -126,8 +127,8 @@ class DocusaurusPlugin(
         List(
           Future(mdoc.mdoc(mdocInternalVariables, List("--watch"))),
           Future {
-            cli(action = "npm install", cwd = website, cmd = List("npm", "install"), cliLogger = cli.CliLogger(logger), env = env)
-            cli(action = "npm run start", cwd = website, cmd = List("npm", "run", "start"), cliLogger = cli.CliLogger(logger), env = env)
+            cli(action = "npm install", cwd = website, cmd = List("npm", "install"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
+            cli(action = "npm run start", cwd = website, cmd = List("npm", "run", "start"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
           }
         )
       ),
