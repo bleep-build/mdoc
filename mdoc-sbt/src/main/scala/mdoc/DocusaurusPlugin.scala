@@ -104,7 +104,7 @@ class DocusaurusPlugin(
     val redirectUrl = docusaurusProjectName + "/index.html"
     val html = redirectHtml(redirectUrl)
     val out = website / "build"
-    Files.writeString(out / "index.html", html)
+    FileUtils.writeString(logger, None, out / "index.html", html)
     out
   }
 
