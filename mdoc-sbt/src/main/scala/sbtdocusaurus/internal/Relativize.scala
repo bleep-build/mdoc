@@ -7,7 +7,7 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file._
 import java.nio.file.attribute.BasicFileAttributes
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 object Relativize {
 
