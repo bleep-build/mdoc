@@ -2,9 +2,9 @@ package bleep.plugin.mdoc
 
 import bleep.internal.FileUtils
 import bleep.logging.Logger
-import bleep.packaging.createJar
+import bleep.packaging.{JarType, ManifestCreator, createJar}
 import bleep.plugin.mdoc.sbtdocusaurus.internal.Relativize
-import bleep.{cli, PathOps}
+import bleep.{PathOps, cli}
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.Duration
@@ -139,7 +139,7 @@ class DocusaurusPlugin(
 
   def packageDoc(target: Path, mdocArgs: List[String]): Path = {
     val directory = doc(mdocArgs)
-    val bytes = createJar(List(directory))
+    val bytes = createJar(JarType.DocsJar, ManifestCreator.default, List(directory))
     val jar = target / "docusaurus.jar"
     Files.write(jar, bytes)
     jar
