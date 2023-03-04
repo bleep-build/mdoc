@@ -41,7 +41,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       args: List[String]
   ): Unit = {
     val outDir = Files.createTempDirectory("bleep-mdoc")
-    val bloopProject = started.bloopProjects(crossProjectName)
+    val bloopProject = started.bloopProject(crossProjectName)
     val explodedProject = started.build.explodedProjects(crossProjectName)
 
     val versionCombo = getVersionCombo(explodedProject)
@@ -53,7 +53,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
 
     mdocJS.foreach { jsCrossId =>
       val jsCrossProjectName = crossProjectName.copy(crossId = Some(jsCrossId))
-      val jsBloopProject = started.bloopProjects(jsCrossProjectName)
+      val jsBloopProject = started.bloopProject(jsCrossProjectName)
       val jsPlatform: Platform.Js = jsBloopProject.platform match {
         case Some(js: Platform.Js) => js
         case other                 => throw new BleepException.Text(s"Expected Scala.js project, got $other")
