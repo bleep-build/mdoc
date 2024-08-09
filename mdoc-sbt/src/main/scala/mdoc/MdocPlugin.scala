@@ -1,6 +1,7 @@
 package bleep.plugin.mdoc
 
-import bleep._
+import bleep.*
+
 import bleep.nosbt.io.IO
 import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
@@ -92,8 +93,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       cmd = List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
       logger = started.logger,
       out = cli.Out.ViaLogger(started.logger),
-    )
-    ()
+    ).discard()
   }
 
   // Optional classpath to use for Mdoc.js worker - if not provided, the classpath will be formed by resolving the worker dependency

@@ -1,10 +1,10 @@
-package bleep.plugin.mdoc
+package bleep
+package plugin.mdoc
 
 import bleep.internal.FileUtils
 import bleep.logging.Logger
 import bleep.packaging.{JarType, ManifestCreator, createJar}
 import bleep.plugin.mdoc.sbtdocusaurus.internal.Relativize
-import bleep.{PathOps, cli}
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.Duration
@@ -24,7 +24,7 @@ class DocusaurusPlugin(
   def gitUser(): String =
     sys.env.getOrElse(
       "GIT_USER", {
-        import scala.sys.process._
+        import scala.sys.process.*
         Try("git config user.email".!!.trim)
           .getOrElse("docusaurus@scalameta.org")
       }
@@ -92,15 +92,14 @@ class DocusaurusPlugin(
       logger = logger,
       out = cli.Out.ViaLogger(logger),
       env = env ++ List("GIT_USER" -> gitUser(), "USE_SSH" -> "true")
-    )
-    ()
+    ).discard()
   }
 
   // Create static build of docusaurus site
   def docusaurusCreateSite(mdocArgs: List[String]): Path = {
     mdoc.mdoc(mdocInternalVariables, mdocArgs)
-    cli(action = "npm install", cwd = website, cmd = List("npm", "install"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
-    cli(action = "npm run build", cwd = website, cmd = List("npm", "run", "build"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
+    cli(action = "npm install", cwd = website, cmd = List("npm", "install"), logger = logger, out = cli.Out.ViaLogger(logger), env = env).discard()
+    cli(action = "npm run build", cwd = website, cmd = List("npm", "run", "build"), logger = logger, out = cli.Out.ViaLogger(logger), env = env).discard()
     val redirectUrl = docusaurusProjectName + "/index.html"
     val html = redirectHtml(redirectUrl)
     val out = website / "build"
@@ -121,21 +120,21 @@ class DocusaurusPlugin(
     out
   }
 
-  def dev(implicit ec: ExecutionContext): Unit = {
-    Await.result(
-      Future.firstCompletedOf(
-        List(
-          Future(mdoc.mdoc(mdocInternalVariables, List("--watch"))),
-          Future {
-            cli(action = "npm install", cwd = website, cmd = List("npm", "install"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
-            cli(action = "npm run start", cwd = website, cmd = List("npm", "run", "start"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
-          }
-        )
-      ),
-      Duration.Inf
-    )
-    ()
-  }
+  def dev(implicit ec: ExecutionContext): Unit =
+    Await
+      .result(
+        Future.firstCompletedOf(
+          List(
+            Future(mdoc.mdoc(mdocInternalVariables, List("--watch"))),
+            Future {
+              cli(action = "npm install", cwd = website, cmd = List("npm", "install"), logger = logger, out = cli.Out.ViaLogger(logger), env = env).discard()
+              cli(action = "npm run start", cwd = website, cmd = List("npm", "run", "start"), logger = logger, out = cli.Out.ViaLogger(logger), env = env)
+            }
+          )
+        ),
+        Duration.Inf
+      )
+      .discard()
 
   def packageDoc(target: Path, mdocArgs: List[String]): Path = {
     val directory = doc(mdocArgs)
