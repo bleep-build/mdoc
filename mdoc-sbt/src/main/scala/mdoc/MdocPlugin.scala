@@ -1,7 +1,6 @@
 package bleep.plugin.mdoc
 
 import bleep.*
-
 import bleep.nosbt.io.IO
 import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
