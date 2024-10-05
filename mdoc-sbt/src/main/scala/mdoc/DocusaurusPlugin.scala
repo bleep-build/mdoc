@@ -2,9 +2,9 @@ package bleep
 package plugin.mdoc
 
 import bleep.internal.FileUtils
-import bleep.logging.Logger
 import bleep.packaging.{JarType, ManifestCreator, createJar}
 import bleep.plugin.mdoc.sbtdocusaurus.internal.Relativize
+import ryddig.Logger
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.Duration
