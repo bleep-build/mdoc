@@ -79,7 +79,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     props.put("in", mdocIn.toString)
     props.put("out", mdocOut.toString)
     props.put("scalacOptions", bloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
-    props.put("classpath", fixedClasspath.apply(bloopProject).mkString(java.io.File.pathSeparator))
+    props.put("classpath", fixedClasspath.apply(bloopProject, true).mkString(java.io.File.pathSeparator))
 
     IO.write(props, "mdoc properties", out.toFile)
     started.logger.info(s"wrote $out")
