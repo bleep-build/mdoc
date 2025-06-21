@@ -110,7 +110,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     model.Dep.Scala("org.scala-js", "mdoc-js-worker", mdocVersion)
 
   def getJars(scalaCombo: model.VersionCombo.Scala, deps: model.Dep*): List[Path] =
-    started.resolver.force(deps.toSet, scalaCombo, libraryVersionSchemes = SortedSet.empty, "booting mdoc").jars
+    started.resolver.force(deps.toSet, scalaCombo, libraryVersionSchemes = SortedSet.empty, "booting mdoc", model.IgnoreEvictionErrors.No).jars
 
   def getVersionCombo(explodedProject: model.Project): model.VersionCombo.Scala =
     model.VersionCombo.fromExplodedProject(explodedProject) match {
