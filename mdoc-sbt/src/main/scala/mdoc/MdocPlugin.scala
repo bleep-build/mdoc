@@ -2,7 +2,6 @@ package bleep.plugin.mdoc
 
 import bleep.*
 import bleep.nosbt.io.IO
-import bloop.config.Config.Platform
 import coursier.core.{ModuleName, Organization}
 
 import java.io.File
@@ -42,7 +41,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       args: List[String]
   ): Unit = {
     val outDir = Files.createTempDirectory("bleep-mdoc")
-    val bloopProject = started.bloopProject(crossProjectName)
+    val resolved = started.resolvedProject(crossProjectName)
     val explodedProject = started.build.explodedProjects(crossProjectName)
 
     val versionCombo = getVersionCombo(explodedProject)
@@ -54,32 +53,32 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
 
     mdocJS.foreach { jsCrossId =>
       val jsCrossProjectName = crossProjectName.copy(crossId = Some(jsCrossId))
-      val jsBloopProject = started.bloopProject(jsCrossProjectName)
-      val jsPlatform: Platform.Js = jsBloopProject.platform match {
-        case Some(js: Platform.Js) => js
-        case other                 => throw new BleepException.Text(s"Expected Scala.js project, got $other")
+      val jsResolved = started.resolvedProject(jsCrossProjectName)
+      val jsPlatform: ResolvedProject.Platform.Js = jsResolved.platform match {
+        case Some(js: ResolvedProject.Platform.Js) => js
+        case other                                 => throw new BleepException.Text(s"Expected Scala.js project, got $other")
       }
       val jsExplodedProject = started.build.explodedProjects(jsCrossProjectName)
 
       val jsVersionCombo = getVersionCombo(jsExplodedProject)
 
-      props.put(s"js-scalac-options", jsBloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
-      props.put(s"js-classpath", jsBloopProject.classpath.mkString(File.pathSeparator))
+      props.put(s"js-scalac-options", jsResolved.scalaConfig.map(_.options).getOrElse(Nil).mkString(" "))
+      props.put(s"js-classpath", jsResolved.classpath.mkString(File.pathSeparator))
       props.put(
         s"js-linker-classpath", {
-          val linkerJars = getJars(jsVersionCombo, linkerDependency(jsPlatform.config.version))
+          val linkerJars = getJars(jsVersionCombo, linkerDependency(jsPlatform.version))
           val workerClasspath = mdocJSWorkerClasspath.getOrElse(getJars(jsVersionCombo, mdocJSDependency))
           (linkerJars ++ workerClasspath).mkString(File.pathSeparator)
         }
       )
       props.put(s"js-libraries", mdocJSLibraries.mkString(File.pathSeparator))
-      props.put(s"js-module-kind", jsPlatform.config.kind.id)
+      props.put(s"js-module-kind", jsPlatform.kind)
     }
 
     props.put("in", mdocIn.toString)
     props.put("out", mdocOut.toString)
-    props.put("scalacOptions", bloopProject.scala.map(_.options).getOrElse(Nil).mkString(" "))
-    props.put("classpath", fixedClasspath.apply(bloopProject, true).mkString(java.io.File.pathSeparator))
+    props.put("scalacOptions", resolved.scalaConfig.map(_.options).getOrElse(Nil).mkString(" "))
+    props.put("classpath", fixedClasspath.apply(resolved).mkString(java.io.File.pathSeparator))
 
     IO.write(props, "mdoc properties", out.toFile)
     started.logger.info(s"wrote $out")
@@ -116,6 +115,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
     model.VersionCombo.fromExplodedProject(explodedProject) match {
       case Left(err)                                   => throw new BleepException.Text(s"Invalid project for mdoc: $err")
       case Right(model.VersionCombo.Java)              => throw new BleepException.Text(s"Invalid project for mdoc: was java project")
+      case Right(model.VersionCombo.Kotlin(_))         => throw new BleepException.Text(s"Invalid project for mdoc: was kotlin project")
       case Right(scalaCombo: model.VersionCombo.Scala) => scalaCombo
     }
 }
