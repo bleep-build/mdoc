@@ -90,7 +90,7 @@ class MdocPlugin(started: Started, crossProjectName: model.CrossProjectName, mdo
       cwd = started.buildPaths.cwd,
       cmd = List(List(started.jvmCommand.toString, "-cp", cp.mkString(File.pathSeparator), "mdoc.Main"), mdocExtraArguments, args).flatten,
       logger = started.logger,
-      out = cli.Out.ViaLogger(started.logger),
+      out = cli.Out.ViaLogger(started.logger)
     ).discard()
   }
 

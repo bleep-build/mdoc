@@ -2,7 +2,7 @@ package bleep
 package plugin.mdoc
 
 import bleep.internal.FileUtils
-import bleep.packaging.{JarType, ManifestCreator, createJar}
+import bleep.packaging.{createJar, JarType, ManifestCreator}
 import bleep.plugin.mdoc.sbtdocusaurus.internal.Relativize
 import ryddig.Logger
 
